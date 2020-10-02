@@ -6,6 +6,11 @@ import (
 	"net/http"
 )
 
+type requestResult struct {
+	url    string
+	status string
+}
+
 var errRequestFailed = errors.New("Request failed")
 
 func main() {
@@ -27,17 +32,29 @@ func main() {
 		// hitURL(url)
 		// #3.1 Slow URLChecker
 		// https://nomadcoders.co/go-for-beginners/lectures/1520
-		result := "OK"
+		res := "OK"
 		err := hitURL(url)
 		if err != nil {
-			result = "FAILED"
+			res = "FAILED"
 
 		}
-		results[url] = result
+		results[url] = res
 	}
 
-	for url, result := range results {
-		fmt.Println(url, result)
+	for url, res := range results {
+		fmt.Println(url, res)
+	}
+
+	// #3.6 URLChecker + Go Routines
+	// https://nomadcoders.co/go-for-beginners/lectures/1525
+	fmt.Println("Goroutine and channel")
+	c := make(chan requestResult)
+	for _, url := range urls {
+		go hitURLWithConcurrency(url, c)
+	}
+	for i := 0; i < len(urls); i++ {
+		r := <-c
+		fmt.Println(r)
 	}
 }
 
@@ -50,4 +67,15 @@ func hitURL(url string) error {
 		return errRequestFailed
 	}
 	return nil
+}
+
+func hitURLWithConcurrency(url string, c chan<- requestResult) {
+	fmt.Println("Checking:", url)
+	resp, err := http.Get(url)
+	fmt.Println("[DEBUG]", err, resp.StatusCode)
+	status := "OK"
+	if err != nil || resp.StatusCode >= 400 {
+		status = "FAILED"
+	}
+	c <- requestResult{url: url, status: status}
 }
