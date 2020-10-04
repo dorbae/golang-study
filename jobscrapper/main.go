@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -25,19 +26,26 @@ var baseURL string = "https://kr.indeed.com/jobs?q=python&limit=50"
 // https://nomadcoders.co/go-for-beginners/lectures/1528
 func main() {
 	var jobs []extractedJob
+	var c = make(chan []extractedJob)
 	totalPages := getPages(baseURL)
 	for i := 0; i < totalPages; i++ {
-		extractedJobs := getPage(i)
+		go getPage(i, c)
+	}
+
+	for i := 0; i < totalPages; i++ {
+		extractedJobs := <-c
 		jobs = append(jobs, extractedJobs...)
 	}
 
 	// fmt.Println(jobs)
 	writeJobs(jobs)
+	fmt.Println("Extracting job was done. Extracted", len(jobs), "jobs.")
 
 }
 
-func getPage(page int) []extractedJob {
+func getPage(page int, mainC chan<- []extractedJob) {
 	var jobs []extractedJob
+	var c = make(chan extractedJob)
 	pageURL := baseURL + "&start=" + strconv.Itoa(page*50)
 	// fmt.Println(pageURL)
 	res, err := http.Get(pageURL)
@@ -49,11 +57,17 @@ func getPage(page int) []extractedJob {
 
 	searchCards := doc.Find(".jobsearch-SerpJobCard")
 	searchCards.Each(func(i int, selection *goquery.Selection) {
-		job := extractJob(selection)
-		jobs = append(jobs, job)
+		go extractJob(selection, c)
 	})
 
-	return jobs
+	for i := 0; i < searchCards.Length(); i++ {
+		job := <-c
+		jobs = append(jobs, job)
+	}
+
+	mainC <- jobs
+	// c <- jobs
+	// return jobs
 
 }
 
@@ -87,7 +101,7 @@ func checkCode(res *http.Response) {
 	}
 }
 
-func extractJob(card *goquery.Selection) extractedJob {
+func extractJob(card *goquery.Selection, c chan<- extractedJob) {
 	id, _ := card.Attr("data-jk")
 	// fmt.Println(id)
 	title := cleanString(card.Find(".title>a").Text())
@@ -97,7 +111,7 @@ func extractJob(card *goquery.Selection) extractedJob {
 	salary := cleanString(card.Find(".salaryText").Text())
 	summary := cleanString(card.Find(".summary").Text())
 	// fmt.Println(id, title, location, salary, summary)
-	return extractedJob{
+	c <- extractedJob{
 		id:       id,
 		title:    title,
 		location: location,
